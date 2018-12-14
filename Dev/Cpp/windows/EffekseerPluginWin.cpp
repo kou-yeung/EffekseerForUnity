@@ -29,6 +29,8 @@ namespace EffekseerPlugin
 {
 	int32_t	g_maxInstances = 0;
 	int32_t	g_maxSquares = 0;
+	bool g_reversedDepth = false;
+	bool g_isRightHandedCoordinate = false;
 
 	IUnityInterfaces*		g_UnityInterfaces = NULL;
 	IUnityGraphics*			g_UnityGraphics = NULL;
@@ -41,12 +43,11 @@ namespace EffekseerPlugin
 	EffekseerRenderer::Renderer*	g_EffekseerRenderer = NULL;
 
 	bool					g_isOpenGLMode = false;
-	bool					g_isOpenGLInitialized = false;
+	bool					g_isInitialized = false;
 
 	EffekseerRenderer::Renderer* CreateRendererOpenGL(int squareMaxCount)
 	{
 		auto renderer = EffekseerRendererGL::Renderer::Create(squareMaxCount, EffekseerRendererGL::OpenGLDeviceType::OpenGL3);
-		renderer->SetDistortingCallback(new DistortingCallbackGL(renderer));
 		return renderer;
 	}
 
@@ -88,13 +89,10 @@ namespace EffekseerPlugin
 		switch (eventType)
 		{
 		case kUnityGfxDeviceEventInitialize:
-			g_UnityRendererType = g_UnityGraphics->GetRenderer();
 			g_isOpenGLMode = true;
-			g_isOpenGLInitialized = false;
 			break;
-
 		case kUnityGfxDeviceEventShutdown:
-			g_UnityRendererType = kUnityGfxRendererNull;
+			g_isOpenGLMode = false;
 			break;
 		}
 	}
@@ -103,8 +101,13 @@ namespace EffekseerPlugin
 	{
 		if (g_EffekseerManager == nullptr) return;
 
-		switch (g_UnityRendererType)
-		{
+		switch (g_UnityRendererType) {
+		case kUnityGfxRendererD3D9:
+			g_EffekseerRenderer = EffekseerPlugin::CreateRendererDX9( g_maxSquares, g_D3d9Device);
+			break;
+		case kUnityGfxRendererD3D11:
+			g_EffekseerRenderer = EffekseerPlugin::CreateRendererDX11( g_maxSquares, g_reversedDepth, g_D3d11Device, g_D3d11Context );
+			break;
 		case kUnityGfxRendererOpenGLCore:
 			g_EffekseerRenderer = CreateRendererOpenGL(g_maxSquares);
 			break;
@@ -126,10 +129,40 @@ namespace EffekseerPlugin
 
 	void TermRenderer()
 	{
+		for (int i = 0; i < MAX_RENDER_PATH; i++)
+		{
+			if (g_UnityRendererType == kUnityGfxRendererD3D11)
+			{
+				if (renderSettings[i].backgroundTexture)
+				{
+					((ID3D11ShaderResourceView*)renderSettings[i].backgroundTexture)->Release();
+				}
+			}
+			renderSettings[i].backgroundTexture = nullptr;
+		}
+
 		if (g_EffekseerRenderer != NULL)
 		{
 			g_EffekseerRenderer->Destroy();
 			g_EffekseerRenderer = NULL;
+		}
+	}
+
+	void SetBackGroundTexture(void *backgroundTexture)
+	{
+		// 背景テクスチャをセット
+		switch (g_UnityRendererType) {
+		case kUnityGfxRendererD3D9:
+			((EffekseerRendererDX9::Renderer*)g_EffekseerRenderer)->SetBackground((IDirect3DTexture9*)backgroundTexture);
+			break;
+		case kUnityGfxRendererD3D11:
+			((EffekseerRendererDX11::Renderer*)g_EffekseerRenderer)->SetBackground((ID3D11ShaderResourceView*)backgroundTexture);
+			break;
+		case kUnityGfxRendererOpenGLCore:
+			((EffekseerRendererGL::Renderer*)g_EffekseerRenderer)->SetBackground(reinterpret_cast<GLuint>(backgroundTexture));
+			break;
+		default:
+			return;
 		}
 	}
 
@@ -140,6 +173,7 @@ namespace EffekseerPlugin
 			g_UnityRendererType = g_UnityGraphics->GetRenderer();
 			break;
 		case kUnityGfxDeviceEventShutdown:
+			TermRenderer();
 			g_UnityRendererType = kUnityGfxRendererNull;
 			break;
 		case kUnityGfxDeviceEventBeforeReset:
@@ -147,7 +181,7 @@ namespace EffekseerPlugin
 		case kUnityGfxDeviceEventAfterReset:
 			break;
 		}
-
+		
 		switch (g_UnityRendererType)
 		{
 		case kUnityGfxRendererD3D9:
@@ -168,11 +202,12 @@ namespace EffekseerPlugin
 extern "C"
 {
 	// Unity plugin load event
-	DLLEXPORT void UNITY_API UnityPluginLoad(IUnityInterfaces* unityInterfaces)
+	void UNITY_API UnityPluginLoad(IUnityInterfaces* unityInterfaces)
 	{
 		g_UnityInterfaces = unityInterfaces;
 		g_UnityGraphics = g_UnityInterfaces->Get<IUnityGraphics>();
-	
+		g_UnityRendererType = g_UnityGraphics->GetRenderer();
+
 		g_UnityGraphics->RegisterDeviceEventCallback(OnGraphicsDeviceEvent);
 
 		// Run OnGraphicsDeviceEvent(initialize) manually on plugin load
@@ -181,30 +216,51 @@ extern "C"
 	}
 
 	// Unity plugin unload event
-	DLLEXPORT void UNITY_API UnityPluginUnload()
+	void UNITY_API UnityPluginUnload()
 	{
 		g_UnityGraphics->UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
 	}
 
 	void UNITY_API EffekseerRender(int renderId)
 	{
-		// 遅延処理
-		if (g_isOpenGLMode && !g_isOpenGLInitialized)
+		if (g_isInitialized == false)
 		{
-			InitRenderer();
-			g_isOpenGLInitialized = true;
+			if (g_EffekseerRenderer != nullptr)
+			{
+				// 遅延終了処理
+				TermRenderer();
+			}
+			return;
 		}
-
-		if (g_isOpenGLMode && g_EffekseerManager == nullptr)
+		else
 		{
-			TermRenderer();
+			if (g_EffekseerRenderer == nullptr)
+			{
+				// 遅延初期化処理
+				InitRenderer();
+			}
 		}
-
+		
 		if (g_EffekseerManager == nullptr) return;
 		if (g_EffekseerRenderer == nullptr) return;
 
-		const RenderSettings& settings = renderSettings[renderId];
-		Effekseer::Matrix44 projectionMatrix = settings.projectionMatrix;
+		RenderSettings& settings = renderSettings[renderId];
+		Effekseer::Matrix44 projectionMatrix, cameraMatrix;
+		
+		if (settings.stereoEnabled) {
+			if (settings.stereoRenderCount == 0) {
+				projectionMatrix = settings.leftProjectionMatrix;
+				cameraMatrix = settings.leftCameraMatrix;
+			} else if (settings.stereoRenderCount == 1) {
+				projectionMatrix = settings.rightProjectionMatrix;
+				cameraMatrix = settings.rightCameraMatrix;
+			}
+			settings.stereoRenderCount++;
+		} else {
+			projectionMatrix = settings.projectionMatrix;
+			cameraMatrix = settings.cameraMatrix;
+		}
+
 		if (settings.renderIntoTexture && !g_isOpenGLMode)
 		{
 			// テクスチャに対してレンダリングするときは上下反転させる
@@ -213,52 +269,164 @@ extern "C"
 
 		// 行列をセット
 		g_EffekseerRenderer->SetProjectionMatrix(projectionMatrix);
-		g_EffekseerRenderer->SetCameraMatrix(settings.cameraMatrix);
+		g_EffekseerRenderer->SetCameraMatrix(cameraMatrix);
+
+		// convert a right hand into a left hand
+		::Effekseer::Vector3D cameraPosition;
+		::Effekseer::Vector3D cameraFrontDirection;
+		CalculateCameraDirectionAndPosition(cameraMatrix, cameraFrontDirection, cameraPosition);
+		
+		//if (!g_isRightHandedCoordinate)
+		{
+			cameraFrontDirection = -cameraFrontDirection;
+			//cameraPosition.Z = -cameraPosition.Z;
+		}
+
+		g_EffekseerRenderer->SetCameraParameter(cameraFrontDirection, cameraPosition);
+		
+		// 背景テクスチャをセット
+		SetBackGroundTexture(settings.backgroundTexture);
 
 		// 描画実行(全体)
 		g_EffekseerRenderer->BeginRendering();
 		g_EffekseerManager->Draw();
 		g_EffekseerRenderer->EndRendering();
+		
+		// 背景テクスチャを解除
+		SetBackGroundTexture(nullptr);
+	}
+
+	void UNITY_API EffekseerRenderFront(int renderId)
+	{
+		if (g_EffekseerManager == nullptr) return;
+		if (g_EffekseerRenderer == nullptr) return;
+
+		// Need not to assgin matrixes. Because these were assigned in EffekseerRenderBack
+
+		g_EffekseerRenderer->BeginRendering();
+		g_EffekseerManager->DrawFront();
+		g_EffekseerRenderer->EndRendering();
+
+		// 背景テクスチャを解除
+		SetBackGroundTexture(nullptr);
+	}
+
+	void UNITY_API EffekseerRenderBack(int renderId)
+	{
+		if (g_isInitialized == false)
+		{
+			if (g_EffekseerRenderer != nullptr)
+			{
+				// 遅延終了処理
+				TermRenderer();
+			}
+			return;
+		}
+		else
+		{
+			if (g_EffekseerRenderer == nullptr)
+			{
+				// 遅延初期化処理
+				InitRenderer();
+			}
+		}
+
+		if (g_EffekseerManager == nullptr) return;
+		if (g_EffekseerRenderer == nullptr) return;
+
+		RenderSettings& settings = renderSettings[renderId];
+		Effekseer::Matrix44 projectionMatrix, cameraMatrix;
+
+		if (settings.stereoEnabled) {
+			if (settings.stereoRenderCount == 0) {
+				projectionMatrix = settings.leftProjectionMatrix;
+				cameraMatrix = settings.leftCameraMatrix;
+			}
+			else if (settings.stereoRenderCount == 1) {
+				projectionMatrix = settings.rightProjectionMatrix;
+				cameraMatrix = settings.rightCameraMatrix;
+			}
+			settings.stereoRenderCount++;
+		}
+		else {
+			projectionMatrix = settings.projectionMatrix;
+			cameraMatrix = settings.cameraMatrix;
+		}
+
+		if (settings.renderIntoTexture && !g_isOpenGLMode)
+		{
+			// テクスチャに対してレンダリングするときは上下反転させる
+			projectionMatrix.Values[1][1] = -projectionMatrix.Values[1][1];
+		}
+
+		// 行列をセット
+		g_EffekseerRenderer->SetProjectionMatrix(projectionMatrix);
+		g_EffekseerRenderer->SetCameraMatrix(cameraMatrix);
+
+		// convert a right hand into a left hand
+		::Effekseer::Vector3D cameraPosition;
+		::Effekseer::Vector3D cameraFrontDirection;
+		CalculateCameraDirectionAndPosition(cameraMatrix, cameraFrontDirection, cameraPosition);
+
+		//if (!g_isRightHandedCoordinate)
+		{
+			cameraFrontDirection = -cameraFrontDirection;
+		}
+
+		g_EffekseerRenderer->SetCameraParameter(cameraFrontDirection, cameraPosition);
+
+		// 背景テクスチャをセット
+		SetBackGroundTexture(settings.backgroundTexture);
+
+		// 描画実行(全体)
+		g_EffekseerRenderer->BeginRendering();
+		g_EffekseerManager->DrawBack();
+		g_EffekseerRenderer->EndRendering();
 	}
 	
-	DLLEXPORT UnityRenderingEvent UNITY_API EffekseerGetRenderFunc(int renderId)
+	UnityRenderingEvent UNITY_API EffekseerGetRenderFunc(int renderId)
 	{
 		return EffekseerRender;
 	}
 
-	DLLEXPORT void UNITY_API EffekseerInit(int maxInstances, int maxSquares, bool reversedDepth)
+	UnityRenderingEvent UNITY_API EffekseerGetRenderFrontFunc(int renderId)
 	{
+		return EffekseerRenderFront;
+	}
+
+	UnityRenderingEvent UNITY_API EffekseerGetRenderBackFunc(int renderId)
+	{
+		return EffekseerRenderBack;
+	}
+
+	void UNITY_API EffekseerInit(int maxInstances, int maxSquares, int reversedDepth, int isRightHandedCoordinate)
+	{
+		g_isInitialized = true;
+
 		g_maxInstances = maxInstances;
 		g_maxSquares = maxSquares;
-
-		switch (g_UnityRendererType) {
-		case kUnityGfxRendererD3D9:
-			g_EffekseerRenderer = EffekseerPlugin::CreateRendererDX9( maxSquares, g_D3d9Device);
-			break;
-		case kUnityGfxRendererD3D11:
-			g_EffekseerRenderer = EffekseerPlugin::CreateRendererDX11( maxSquares, reversedDepth, g_D3d11Device, g_D3d11Context );
-			break;
-		case kUnityGfxRendererOpenGLCore:
-			return;
-			g_isOpenGLMode = true;
-			break;
-		default:
-			return;
-		}
+		g_reversedDepth = reversedDepth != 0;
+		g_isOpenGLMode = (g_UnityRendererType == kUnityGfxRendererOpenGLCore);
+		g_isRightHandedCoordinate = isRightHandedCoordinate != 0;
 
 		g_EffekseerManager = Effekseer::Manager::Create(maxInstances);
 
+		if (g_isRightHandedCoordinate)
+		{
+			g_EffekseerManager->SetCoordinateSystem(Effekseer::CoordinateSystem::RH);
+		}
+		else
+		{
+			g_EffekseerManager->SetCoordinateSystem(Effekseer::CoordinateSystem::LH);
+		}
+
 		if (!g_isOpenGLMode)
 		{
-			g_EffekseerManager->SetSpriteRenderer(g_EffekseerRenderer->CreateSpriteRenderer());
-			g_EffekseerManager->SetRibbonRenderer(g_EffekseerRenderer->CreateRibbonRenderer());
-			g_EffekseerManager->SetRingRenderer(g_EffekseerRenderer->CreateRingRenderer());
-			g_EffekseerManager->SetTrackRenderer(g_EffekseerRenderer->CreateTrackRenderer());
-			g_EffekseerManager->SetModelRenderer(g_EffekseerRenderer->CreateModelRenderer());
+			InitRenderer();
 		}
 	}
 
-	DLLEXPORT void UNITY_API EffekseerTerm()
+	void UNITY_API EffekseerTerm()
 	{
 		if (g_EffekseerManager != NULL) {
 			g_EffekseerManager->Destroy();
@@ -267,10 +435,72 @@ extern "C"
 
 		if (!g_isOpenGLMode)
 		{
-			if (g_EffekseerRenderer != NULL)
+			TermRenderer();
+		}
+
+		g_isInitialized = false;
+	}
+	
+	// 歪み用テクスチャ設定
+	void UNITY_API EffekseerSetBackGroundTexture(int renderId, void* texture)
+	{
+		if (renderId >= 0 && renderId < MAX_RENDER_PATH) {
+			if (g_UnityRendererType == kUnityGfxRendererD3D11)
 			{
-				g_EffekseerRenderer->Destroy();
-				g_EffekseerRenderer = NULL;
+				HRESULT hr;
+				
+				// DX11の場合、Unityから渡されるのはID3D11Texture2Dなので、
+				// ID3D11ShaderResourceViewを作成する
+
+				ID3D11Texture2D* textureDX11 = (ID3D11Texture2D*)texture;
+				ID3D11ShaderResourceView* srv = (ID3D11ShaderResourceView*)renderSettings[renderId].backgroundTexture;
+				
+				if (srv != nullptr)
+				{
+					ID3D11Resource* res = nullptr;
+					srv->GetResource(&res);
+					if (res != texture)
+					{
+						// 違うTextureが指定されたら一旦削除
+						srv->Release();
+						srv = nullptr;
+						renderSettings[renderId].backgroundTexture = nullptr;
+					}
+				}
+
+				if (srv == nullptr)
+				{
+					D3D11_TEXTURE2D_DESC texDesc;
+					textureDX11->GetDesc(&texDesc);
+				
+					D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+					ZeroMemory(&desc, sizeof(desc));
+					// フォーマットを調整する
+					switch (texDesc.Format)
+					{
+					case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+						desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+						break;
+					case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+						desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+						break;
+					default:
+						desc.Format = texDesc.Format;
+						break;
+					}
+					desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+					desc.Texture2D.MostDetailedMip = 0;
+					desc.Texture2D.MipLevels = texDesc.MipLevels;
+					hr = g_D3d11Device->CreateShaderResourceView(textureDX11, &desc, &srv);
+					if (SUCCEEDED(hr))
+					{
+						renderSettings[renderId].backgroundTexture = srv;
+					}
+				}
+			}
+			else	// DX9 or OpenGL
+			{
+				renderSettings[renderId].backgroundTexture = texture;
 			}
 		}
 	}

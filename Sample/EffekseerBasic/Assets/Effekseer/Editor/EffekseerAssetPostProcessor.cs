@@ -20,8 +20,13 @@ public class EffekseerAssetPostProcessor : AssetPostprocessor
 			if (Path.GetExtension(assetPath) == ".efkmodel") {
 				File.Move(assetPath, assetPath + ".bytes");
 			}
+            // 
+            if (assetPath.Contains("libEffekseerUnity.bc"))
+            {
+                //EffekseerPluginSwitcher.Run();
+            }
 		}
-	}
+    }
 
 	static bool isInEffekseerDirectory(string path)
 	{
@@ -39,7 +44,7 @@ public class EffekseerAssetPostProcessor : AssetPostprocessor
 		TextureImporter ti = assetImporter as TextureImporter;
 		//ti.maxTextureSize = 4096;
 		ti.isReadable = true;
-		ti.mipmapEnabled = false;
+		ti.mipmapEnabled = true;
 		ti.textureFormat = TextureImporterFormat.ARGB32;
 	}
 

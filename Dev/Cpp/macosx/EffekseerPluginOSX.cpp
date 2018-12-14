@@ -7,6 +7,7 @@
 static IUnityInterfaces*	g_UnityInterfaces = NULL;
 static IUnityGraphics*		g_Graphics = NULL;
 static UnityGfxRenderer		g_RendererType = kUnityGfxRendererNull;
+static bool g_isRightHandedCoordinate = false;
 
 Effekseer::Manager*				g_EffekseerManager = NULL;
 EffekseerRenderer::Renderer*	g_EffekseerRenderer = NULL;
@@ -14,7 +15,7 @@ EffekseerRenderer::Renderer*	g_EffekseerRenderer = NULL;
 static void UNITY_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType);
 
 // Unity plugin load event
-extern "C" DLLEXPORT void UNITY_API UnityPluginLoad(IUnityInterfaces* unityInterfaces)
+extern "C" void UNITY_API UnityPluginLoad(IUnityInterfaces* unityInterfaces)
 {
 	g_UnityInterfaces = unityInterfaces;
 	g_Graphics = unityInterfaces->Get<IUnityGraphics>();
@@ -27,7 +28,7 @@ extern "C" DLLEXPORT void UNITY_API UnityPluginLoad(IUnityInterfaces* unityInter
 }
 
 // Unity plugin unload event
-extern "C" DLLEXPORT void UNITY_API UnityPluginUnload()
+extern "C" void UNITY_API UnityPluginUnload()
 {
 	g_Graphics->UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
 }
@@ -64,12 +65,12 @@ extern "C"
 	}
 	
 	
-	DLLEXPORT UnityRenderingEvent UNITY_API EffekseerGetRenderFunc(int renderId)
+	UnityRenderingEvent UNITY_API EffekseerGetRenderFunc(int renderId)
 	{
 		return EffekseerRender;
 	}
 
-	DLLEXPORT void UNITY_API EffekseerInit(int maxInstances, int maxSquares, bool reversedDepth)
+	void UNITY_API EffekseerInit(int maxInstances, int maxSquares, int reversedDepth, int isRightHandedCoordinate)
 	{
 		g_EffekseerManager = Effekseer::Manager::Create(maxInstances);
 
@@ -78,9 +79,19 @@ extern "C"
 		g_EffekseerManager->SetRibbonRenderer(g_EffekseerRenderer->CreateRibbonRenderer());
 		g_EffekseerManager->SetRingRenderer(g_EffekseerRenderer->CreateRingRenderer());
 		g_EffekseerManager->SetModelRenderer(g_EffekseerRenderer->CreateModelRenderer());
+
+		g_isRightHandedCoordinate = isRightHandedCoordinate != 0;
+		if (g_isRightHandedCoordinate)
+		{
+			g_EffekseerManager->SetCoordinateSystem(Effekseer::CoordinateSystem::RH);
+		}
+		else
+		{
+			g_EffekseerManager->SetCoordinateSystem(Effekseer::CoordinateSystem::LH);
+		}
 	}
 
-	DLLEXPORT void UNITY_API EffekseerTerm()
+	void UNITY_API EffekseerTerm()
 	{
 		if (g_EffekseerManager != NULL) {
 			g_EffekseerManager->Destroy();

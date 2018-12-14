@@ -1,4 +1,4 @@
-# Effekseer UnityPlugin Manual
+﻿# Effekseer UnityPlugin Manual
 
 ![](../img/plugin_logo.png)
 
@@ -12,8 +12,7 @@ Effekseerの再生プログラムはC++で書かれているため、Unity上で
 ## 動作環境 {#environment}
 
 ### Unityバージョン
-Unity 5.2 以降。 Personal, Plus, Pro
-Unity 5.3, 5.4, 5.5 で動作確認。
+Unity 5.5 以降。 Personal, Plus, Pro
 
 ### プラットフォーム
 
@@ -112,8 +111,24 @@ Effekseer.unitypackage を開いてUnityプロジェクトにインポートし�
 
 ![](../img/unity_import.png)
 
+## 仕様変更
+
+### 1.4
+
+歪みに機能が追加されました。Effekseerのエフェクトが歪みにより一部歪むようになりました。
+
+### 1.3
+
+エフェクトの前後が入れ替わっています。
+1.2以前の表示を行う場合、EffekseerSystemコンポーネントの ```isRightHandledCoordinateSystem``` をtrueにしてください。
+
+歪み方法が変更されました。Effekseerのエフェクトが歪みにより歪まなくなっています。
+1.4以降に、歪みにより歪むエフェクトを追加する予定です。
+
+
 ## 既知の問題 {#issues}
 - 対応プラットフォームでも非対応の Graphics API では、正しくエフェクトの描画が行われません。<br>上記の"対応プラットフォーム"の表を確認をしてください。
+- DirectX11のForwardレンダラーで、Editor上のGameViewのみ、3Dモデルの表裏が逆になります。Effekseer上でカリングの設定を変更してください。
 
 ## Todo {#todo}
 - 未対応の Graphics API (Metal, Vulkan) の対応

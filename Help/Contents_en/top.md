@@ -1,4 +1,4 @@
-# Effekseer UnityPlugin Manual
+﻿# Effekseer UnityPlugin Manual
 
 ![](../img/plugin_logo.png)
 
@@ -12,7 +12,7 @@ Because Effekseer's playback program is written in C ++, it is handled as a nati
 ## Environment {#environment}
 
 ### Unity version
-Unity 5.2 or later.  
+Unity 5.5 or later.  
 Personal, Plus and Pro.
 
 ### Supported Platform
@@ -112,8 +112,23 @@ Open Effekseer.unitypackage and import it into the your Unity project.
 
 ![](../img/unity_import.png)
 
+## Specification change
+
+### 1.4
+
+Distortion functions has been added. Part of Effekseer's effects are distorted due to distortion.
+
+### 1.3
+
+Before and after the effect are swapped.
+When doing display before 1.2, set ```isRightHandledCoordinateSystem``` of EffekseerSystem component to true.
+
+Distortion method has been changed. Effekseer's effect is not distorted due to distortion.
+From 1.4 onwards, we plan to add effects distorted by distortion.
+
 ## Known issues {#issues}
 - Even on supported platforms, effect graphics are not rendered correctly in Graphics API which is not supported.<br>Please check the table of "Supported Platform".
+- In the Forward renderer of DirectX 11, only the GameView on the Editor, the front and back of the 3D model are reversed. Please change the Culling setting on Effekseer.
 
 ## Todo {#todo}
 - Support some new Graphics API (Metal, Vulkan)

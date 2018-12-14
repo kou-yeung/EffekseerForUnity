@@ -101,7 +101,22 @@ public class EffekseerEmitter : MonoBehaviour
 			handle = null;
 		}
 	}
-	
+
+	/// <summary xml:lang="en">
+	/// Specify the color of overall effect.
+	/// </summary>
+	/// <summary xml:lang="ja">
+	/// エフェクト全体の色を指定する。
+	/// </summary>
+	/// <param name="color">Color</param>
+	public void SetAllColor(Color color)
+	{
+		if (handle.HasValue)
+		{
+			handle.Value.SetAllColor(color);
+		}
+	}
+
 	/// <summary xml:lang="en">
 	/// Sets the target location of the played effects.
 	/// <param name="targetLocation" xml:lang="en">Target location</param>
@@ -162,7 +177,29 @@ public class EffekseerEmitter : MonoBehaviour
 			return handle.HasValue && handle.Value.shown;
 		}
 	}
-	
+
+	/// <summary xml:lang="en">
+	/// Playback speed
+	/// </summary>
+	/// <summary xml:lang="ja">
+	/// 再生速度
+	/// </summary>
+	public float speed
+	{
+		set
+		{
+			if (handle.HasValue)
+			{
+				var h = handle.Value;
+				h.speed = value;
+			}
+		}
+		get
+		{
+			return handle.HasValue ? handle.Value.speed : 0.0f;
+		}
+	}
+
 	/// <summary xml:lang="en">
 	/// Existing state
 	/// <para>true:  It's existed.</para>

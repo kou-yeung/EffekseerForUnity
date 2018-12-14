@@ -1,4 +1,20 @@
-# Release notes
+﻿# Release notes
+
+## 1.41b
+-Fixed a bug that 3D model is not shown in Mac
+
+## 1.41
+- Fixed a bug that effects can not be played if .. is included in the file path
+- Fixed a bug that rendering became wrong when used with VR
+- Fixed a bug that the effect was not released actually when calling Release function
+
+## 1.40
+- Distortion specification is changed.
+- Added functions
+
+## 1.30
+- Distortion specification is changed.
+- Coordinate system specification is changed.
 
 ## 1.23
 - [Windows] Fixed to correctly draw with Unity 5.5β

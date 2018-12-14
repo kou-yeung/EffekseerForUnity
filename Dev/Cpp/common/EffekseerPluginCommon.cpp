@@ -30,22 +30,43 @@ namespace EffekseerPlugin
 		matrix.Values[2][3] = matrixArray[14];
 		matrix.Values[3][3] = matrixArray[15];
 	}
+
+
+	void CalculateCameraDirectionAndPosition(const Effekseer::Matrix44& matrix, Effekseer::Vector3D& direction, Effekseer::Vector3D& position)
+	{
+		auto mat = matrix;
+
+		direction = ::Effekseer::Vector3D(matrix.Values[0][2], matrix.Values[1][2], matrix.Values[2][2]);
+		
+		{
+			auto localPos = ::Effekseer::Vector3D(-mat.Values[3][0], -mat.Values[3][1], -mat.Values[3][2]);
+			auto f = ::Effekseer::Vector3D(mat.Values[0][2], mat.Values[1][2], mat.Values[2][2]);
+			auto r = ::Effekseer::Vector3D(mat.Values[0][0], mat.Values[1][0], mat.Values[2][0]);
+			auto u = ::Effekseer::Vector3D(mat.Values[0][1], mat.Values[1][1], mat.Values[2][1]);
+
+			position = r * localPos.X + u * localPos.Y + f * localPos.Z;
+		}
+	}
 }
 
 extern "C"
 {
 	// フレームの更新
-	DLLEXPORT void UNITY_API EffekseerUpdate(float deltaFrame)
+	void UNITY_API EffekseerUpdate(float deltaFrame)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
 		}
 		
 		g_EffekseerManager->Update(deltaFrame);
+
+		for (auto& settings : renderSettings) {
+			settings.stereoRenderCount = 0;
+		}
 	}
 	
 	// エフェクトのロード
-	DLLEXPORT Effect* UNITY_API EffekseerLoadEffect(const EFK_CHAR* path)
+	Effect* UNITY_API EffekseerLoadEffect(const EFK_CHAR* path)
 	{
 		if (g_EffekseerManager == NULL) {
 			return NULL;
@@ -55,7 +76,7 @@ extern "C"
 	}
 	
 	// エフェクトのロード（メモリ指定）
-	DLLEXPORT Effect* UNITY_API EffekseerLoadEffectOnMemory(void* data, int32_t size)
+	Effect* UNITY_API EffekseerLoadEffectOnMemory(void* data, int32_t size)
 	{
 		if (g_EffekseerManager == NULL) {
 			return NULL;
@@ -65,7 +86,7 @@ extern "C"
 	}
 	
 	// エフェクトのアンロード
-	DLLEXPORT void UNITY_API EffekseerReleaseEffect(Effect* effect)
+	void UNITY_API EffekseerReleaseEffect(Effect* effect)
 	{
 		if (effect != NULL) {
 			effect->Release();
@@ -73,7 +94,7 @@ extern "C"
 	}
 
 	// エフェクト再生
-	DLLEXPORT int UNITY_API EffekseerPlayEffect(Effect* effect, float x, float y, float z)
+	int UNITY_API EffekseerPlayEffect(Effect* effect, float x, float y, float z)
 	{
 		if (g_EffekseerManager == NULL) {
 			return -1;
@@ -85,8 +106,20 @@ extern "C"
 		return -1;
 	}
 	
+	// フレームの更新(ハンドル単位)
+	void UNITY_API EffekseerUpdateHandle(int handle, float deltaFrame)
+	{
+		if (g_EffekseerManager == NULL) {
+			return;
+		}
+		
+		g_EffekseerManager->BeginUpdate();
+		g_EffekseerManager->UpdateHandle(handle, deltaFrame);
+		g_EffekseerManager->EndUpdate();
+	}
+
 	// エフェクト停止
-	DLLEXPORT void UNITY_API EffekseerStopEffect(int handle)
+	void UNITY_API EffekseerStopEffect(int handle)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -96,7 +129,7 @@ extern "C"
 	}
 	
 	// エフェクトのルートだけを停止
-	DLLEXPORT void UNITY_API EffekseerStopRoot(int handle)
+	void UNITY_API EffekseerStopRoot(int handle)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -106,7 +139,7 @@ extern "C"
 	}
 	
 	// 全てのエフェクト再生
-	DLLEXPORT void UNITY_API EffekseerStopAllEffects()
+	void UNITY_API EffekseerStopAllEffects()
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -114,9 +147,27 @@ extern "C"
 
 		g_EffekseerManager->StopAllEffects();
 	}
+
+	void UNITY_API EffekseerSetPausedToAllEffects(int paused)
+	{
+		if (g_EffekseerManager == NULL) {
+			return;
+		}
+
+		g_EffekseerManager->SetPausedToAllEffects(paused != 0);
+	}
 	
+	int UNITY_API EffekseerGetShown(int handle)
+	{
+		if (g_EffekseerManager == NULL) {
+			return 0;
+		}
+
+		return g_EffekseerManager->GetShown(handle);
+	}
+
 	// エフェクト可視設定
-	DLLEXPORT void UNITY_API EffekseerSetShown(int handle, int shown)
+	void UNITY_API EffekseerSetShown(int handle, int shown)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -124,9 +175,18 @@ extern "C"
 
 		g_EffekseerManager->SetShown(handle, shown != 0);
 	}
-	
+
+	int UNITY_API EffekseerGetPaused(int handle)
+	{
+		if (g_EffekseerManager == NULL) {
+			return 0;
+		}
+
+		return g_EffekseerManager->GetPaused(handle);
+	}
+
 	// エフェクト一時停止
-	DLLEXPORT void UNITY_API EffekseerSetPaused(int handle, int paused)
+	void UNITY_API EffekseerSetPaused(int handle, int paused)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -134,9 +194,27 @@ extern "C"
 
 		g_EffekseerManager->SetPaused(handle, paused != 0);
 	}
+
+	float UNITY_API EffekseerGetSpeed(int handle)
+	{
+		if (g_EffekseerManager == NULL) {
+			return 0;
+		}
+
+		return g_EffekseerManager->GetSpeed(handle);
+	}
+
+	void UNITY_API EffekseerSetSpeed(int handle, float speed)
+	{
+		if (g_EffekseerManager == NULL) {
+			return;
+		}
+
+		g_EffekseerManager->SetSpeed(handle, speed);
+	}
 	
 	// エフェクト存在状態
-	DLLEXPORT int UNITY_API EffekseerExists(int handle)
+	int UNITY_API EffekseerExists(int handle)
 	{
 		if (g_EffekseerManager == NULL) {
 			return false;
@@ -146,7 +224,7 @@ extern "C"
 	}
 	
 	// エフェクト位置設定
-	DLLEXPORT void UNITY_API EffekseerSetLocation(int handle, float x, float y, float z)
+	void UNITY_API EffekseerSetLocation(int handle, float x, float y, float z)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -156,7 +234,7 @@ extern "C"
 	}
 	
 	// エフェクト回転設定
-	DLLEXPORT void UNITY_API EffekseerSetRotation(int handle, float x, float y, float z, float angle)
+	void UNITY_API EffekseerSetRotation(int handle, float x, float y, float z, float angle)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -167,7 +245,7 @@ extern "C"
 	}
 	
 	// エフェクト拡縮設定
-	DLLEXPORT void UNITY_API EffekseerSetScale(int handle, float x, float y, float z)
+	void UNITY_API EffekseerSetScale(int handle, float x, float y, float z)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -175,9 +253,19 @@ extern "C"
 
 		g_EffekseerManager->SetScale(handle, x, y, z);
 	}
+
+	// Specify the color of overall effect.
+	void UNITY_API EffekseerSetAllColor(int handle, int r, int g, int b, int a)
+	{
+		if (g_EffekseerManager == NULL) {
+			return;
+		}
+
+		g_EffekseerManager->SetAllColor(handle, Effekseer::Color(r, g, b, a));
+	}
 	
 	// エフェクトのターゲット位置設定
-	DLLEXPORT void UNITY_API EffekseerSetTargetLocation(int handle, float x, float y, float z)
+	void UNITY_API EffekseerSetTargetLocation(int handle, float x, float y, float z)
 	{
 		if (g_EffekseerManager == NULL) {
 			return;
@@ -187,7 +275,7 @@ extern "C"
 	}
 	
 	// プロジェクション行列設定
-	DLLEXPORT void UNITY_API EffekseerSetProjectionMatrix(int renderId, float matrixArray[])
+	void UNITY_API EffekseerSetProjectionMatrix(int renderId, float matrixArray[])
 	{
 		if (renderId >= 0 && renderId < MAX_RENDER_PATH) {
 			Array2Matrix(renderSettings[renderId].projectionMatrix, matrixArray);
@@ -195,22 +283,35 @@ extern "C"
 	}
 	
 	// ビュー行列設定
-	DLLEXPORT void UNITY_API EffekseerSetCameraMatrix(int renderId, float matrixArray[])
+	void UNITY_API EffekseerSetCameraMatrix(int renderId, float matrixArray[])
 	{
 		if (renderId >= 0 && renderId < MAX_RENDER_PATH) {
 			Array2Matrix(renderSettings[renderId].cameraMatrix, matrixArray);
 		}
 	}
-	
+
+	// ステレオレンダリング(VR)用行列設定
+	void UNITY_API EffekseerSetStereoRenderingMatrix(int renderId, float projMatL[], float projMatR[], float camMatL[], float camMatR[])
+	{
+		if (renderId >= 0 && renderId < MAX_RENDER_PATH) {
+			auto& settings = renderSettings[renderId];
+			settings.stereoEnabled = true;
+			Array2Matrix(settings.leftProjectionMatrix, projMatL);
+			Array2Matrix(settings.rightProjectionMatrix, projMatR);
+			Array2Matrix(settings.leftCameraMatrix, camMatL);
+			Array2Matrix(settings.rightCameraMatrix, camMatR);
+		}
+	}
+
 	// 描画設定
-	DLLEXPORT void UNITY_API EffekseerSetRenderSettings(int renderId, bool renderIntoTexture)
+	void UNITY_API EffekseerSetRenderSettings(int renderId, bool renderIntoTexture)
 	{
 		if (renderId >= 0 && renderId < MAX_RENDER_PATH) {
 			renderSettings[renderId].renderIntoTexture = renderIntoTexture;
 		}
 	}
 
-	DLLEXPORT void UNITY_API EffekseerSetTextureLoaderEvent(
+	void UNITY_API EffekseerSetTextureLoaderEvent(
 		TextureLoaderLoad load,
 		TextureLoaderUnload unload)
 	{
@@ -221,7 +322,7 @@ extern "C"
 		g_EffekseerManager->SetTextureLoader(EffekseerPlugin::TextureLoader::Create(load, unload));
 	}
 
-	DLLEXPORT void UNITY_API EffekseerSetModelLoaderEvent(
+	void UNITY_API EffekseerSetModelLoaderEvent(
 		ModelLoaderLoad load,
 		ModelLoaderUnload unload)
 	{
@@ -232,7 +333,7 @@ extern "C"
 		g_EffekseerManager->SetModelLoader(EffekseerPlugin::ModelLoader::Create(load, unload));
 	}
 
-	DLLEXPORT void UNITY_API EffekseerSetSoundLoaderEvent(
+	void UNITY_API EffekseerSetSoundLoaderEvent(
 		SoundLoaderLoad load,
 		SoundLoaderUnload unload)
 	{
@@ -243,7 +344,7 @@ extern "C"
 		g_EffekseerManager->SetSoundLoader(EffekseerPlugin::SoundLoader::Create(load, unload));
 	}
 
-	DLLEXPORT void UNITY_API EffekseerSetSoundPlayerEvent(
+	void UNITY_API EffekseerSetSoundPlayerEvent(
 		SoundPlayerPlay play,
 		SoundPlayerStopTag stopTag,
 		SoundPlayerPauseTag pauseTag,

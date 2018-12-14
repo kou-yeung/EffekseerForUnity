@@ -30,9 +30,15 @@ namespace EffekseerPlugin
 	{
 		return length;
 	}
+
 	ModelLoader::MemoryFile::MemoryFile( size_t bufferSize ) {
 		loadbuffer.resize(bufferSize);
 	}
+
+	void ModelLoader::MemoryFile::Resize(size_t bufferSize) {
+		loadbuffer.resize(bufferSize);
+	}
+
 	Effekseer::FileReader* ModelLoader::MemoryFile::OpenRead( const EFK_CHAR* path ) {
 		return new MemoryFileReader(&loadbuffer[0], loadsize);
 	}
@@ -56,12 +62,29 @@ namespace EffekseerPlugin
 			return it->second.internalData;
 		}
 
-		// Unityでロード
+		// Load with unity
 		ModelResource res;
-		int size = load( (const char16_t*)path, 
-			&memoryFile.loadbuffer[0], (int)memoryFile.loadbuffer.size() );
-		if (size <= 0) {
+		int size = load( (const char16_t*)path, &memoryFile.loadbuffer[0], (int)memoryFile.loadbuffer.size() );
+
+		if (size == 0)
+		{
+			// Failed to load
 			return nullptr;
+		}
+
+		if (size < 0)
+		{
+			// Lack of memory
+			memoryFile.Resize(-size);
+
+			// Load with unity
+			size = load((const char16_t*)path, &memoryFile.loadbuffer[0], (int)memoryFile.loadbuffer.size());
+
+			if(size <= 0)
+			{
+				// Failed to load
+				return nullptr;
+			}
 		}
 
 		// 内部ローダに渡してロード処理する
@@ -85,8 +108,10 @@ namespace EffekseerPlugin
 
 		// 参照カウンタが0になったら実際にアンロード
 		it->second.referenceCount--;
-		if (it->second.referenceCount <= 0) {
-			unload( it->first.c_str() );
+		if (it->second.referenceCount <= 0)
+		{
+			internalLoader->Unload(it->second.internalData);
+			unload(it->first.c_str());
 			resources.erase(it);
 		}
 	}

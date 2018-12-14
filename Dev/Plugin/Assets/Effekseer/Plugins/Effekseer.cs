@@ -13,18 +13,31 @@ namespace Effekseer
 	internal abstract class Resource
 	{
 		public string path {get; protected set;}
+		public string keyPath { get; protected set; }
+
 		public AssetBundle assetBundle {get; protected set;}
 		
-		public abstract bool Load(string path, AssetBundle assetBundle);
+		public abstract bool Load(string path, string keyPath, AssetBundle assetBundle);
 		public abstract void Unload();
 
-		protected T LoadAsset<T>(string path, bool removeExtension, AssetBundle assetBundle) where T : UnityEngine.Object {
+		protected T LoadAsset<T>(string path, string keyPath, bool removeExtension, AssetBundle assetBundle) where T : UnityEngine.Object {
 			this.path = path;
+			this.keyPath = keyPath;
 			this.assetBundle = assetBundle;
-			if (assetBundle != null) {
-				return assetBundle.LoadAsset<T>(
-					Utility.ResourcePath(path, removeExtension));
-			} else {
+			if (assetBundle != null)
+			{
+				// TODO refactoring
+				var assetPath = path;
+				if (!removeExtension) assetPath += ".bytes";
+				assetPath = "Assets/Bundles/effects/Effekseer/" + assetPath;
+				var assetPath2 = System.IO.Path.GetFileNameWithoutExtension(path);
+
+				var ret = assetBundle.LoadAsset<T>(assetPath);
+				if (ret != null) return ret;
+
+				return assetBundle.LoadAsset<T>(assetPath2);
+			}
+			else {
 				return Resources.Load<T>(
 					Utility.ResourcePath(path, removeExtension));
 			}
@@ -43,8 +56,8 @@ namespace Effekseer
 	internal class TextureResource : Resource
 	{
 		public Texture2D texture;
-		public override bool Load(string path, AssetBundle assetBundle) {
-			texture = LoadAsset<Texture2D>(path, true, assetBundle);
+		public override bool Load(string path, string keyPath, AssetBundle assetBundle) {
+			texture = LoadAsset<Texture2D>(path, keyPath, true, assetBundle);
 			if (texture == null) {
 				Debug.LogError("[Effekseer] Failed to load Texture: " + path);
 				return false;
@@ -63,8 +76,8 @@ namespace Effekseer
 	internal class ModelResource : Resource
 	{
 		public TextAsset modelData;
-		public override bool Load(string path, AssetBundle assetBundle) {
-			modelData = LoadAsset<TextAsset>(path, false, assetBundle);
+		public override bool Load(string path, string keyPath, AssetBundle assetBundle) {
+			modelData = LoadAsset<TextAsset>(path, keyPath, false, assetBundle);
 			if (modelData == null) {
 				Debug.LogError("[Effekseer] Failed to load Model: " + path);
 				return false;
@@ -76,7 +89,7 @@ namespace Effekseer
 			modelData = null;
 		}
 		public bool Copy(IntPtr buffer, int bufferSize) {
-			if (modelData.bytes.Length < bufferSize) {
+			if (modelData.bytes.Length <= bufferSize) {
 				Marshal.Copy(modelData.bytes, 0, buffer, modelData.bytes.Length);
 				return true;
 			}
@@ -87,8 +100,8 @@ namespace Effekseer
 	internal class SoundResource : Resource
 	{
 		public AudioClip audio;
-		public override bool Load(string path, AssetBundle assetBundle) {
-			audio = LoadAsset<AudioClip>(path, true, assetBundle);
+		public override bool Load(string path, string keyPath, AssetBundle assetBundle) {
+			audio = LoadAsset<AudioClip>(path, keyPath, true, assetBundle);
 			if (audio == null) {
 				Debug.LogError("[Effekseer] Failed to load Sound: " + path);
 				return false;
@@ -129,14 +142,14 @@ namespace Effekseer
 	
 	internal static class Plugin
 	{
-		#if !UNITY_EDITOR && (UNITY_IPHONE || UNITY_WEBGL)
+#if !UNITY_EDITOR && (UNITY_IPHONE || UNITY_WEBGL || UNITY_SWITCH)
 			public const string pluginName = "__Internal";
-		#else
-			public const string pluginName = "EffekseerUnity";
+#else
+		public const string pluginName = "EffekseerUnity";
 		#endif
 
 		[DllImport(pluginName)]
-		public static extern void EffekseerInit(int maxInstances, int maxSquares, bool reversedDepth);
+		public static extern void EffekseerInit(int maxInstances, int maxSquares, bool isRightHandedCoordinate, bool reversedDepth);
 		
 		[DllImport(pluginName)]
 		public static extern void EffekseerTerm();
@@ -147,11 +160,23 @@ namespace Effekseer
 		[DllImport(pluginName)]
         public static extern IntPtr EffekseerGetRenderFunc(int renderId = 0);
 
-        [DllImport(pluginName)]
+		[DllImport(pluginName)]
+		public static extern IntPtr EffekseerGetRenderFrontFunc(int renderId = 0);
+
+		[DllImport(pluginName)]
+		public static extern IntPtr EffekseerGetRenderBackFunc(int renderId = 0);
+
+		[DllImport(pluginName)]
 		public static extern void EffekseerSetProjectionMatrix(int renderId, float[] matrix);
-	
+
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetCameraMatrix(int renderId, float[] matrix);
+
+		[DllImport(pluginName)]
+		public static extern void EffekseerSetStereoRenderingMatrix(int renderId, float[] projMatL, float[] projMatR, float[] camMatL, float[] camMatR);
+
+		[DllImport(pluginName)]
+		public static extern void EffekseerSetBackGroundTexture(int renderId, IntPtr background);
 		
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetRenderSettings(int renderId, bool renderIntoTexture);
@@ -169,6 +194,9 @@ namespace Effekseer
 		public static extern int EffekseerPlayEffect(IntPtr effect, float x, float y, float z);
 	
 		[DllImport(pluginName)]
+		public static extern void EffekseerUpdateHandle(int handle, float deltaDrame);
+	
+		[DllImport(pluginName)]
 		public static extern void EffekseerStopEffect(int handle);
 	
 		[DllImport(pluginName)]
@@ -176,13 +204,28 @@ namespace Effekseer
 	
 		[DllImport(pluginName)]
 		public static extern void EffekseerStopAllEffects();
-	
+
+		[DllImport(pluginName)]
+		public static extern void EffekseerSetPausedToAllEffects(bool paused);
+
+		[DllImport(pluginName)]
+		public static extern bool EffekseerGetShown(int handle);
+
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetShown(int handle, bool shown);
-	
+
+		[DllImport(pluginName)]
+		public static extern bool EffekseerGetPaused(int handle);
+
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetPaused(int handle, bool paused);
-	
+
+		[DllImport(pluginName)]
+		public static extern float EffekseerGetSpeed(int handle);
+
+		[DllImport(pluginName)]
+		public static extern void EffekseerSetSpeed(int handle, float speed);
+
 		[DllImport(pluginName)]
 		public static extern bool EffekseerExists(int handle);
 
@@ -194,6 +237,9 @@ namespace Effekseer
 
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetScale(int handle, float x, float y, float z);
+
+		[DllImport(pluginName)]
+		public static extern void EffekseerSetAllColor(int handle, int r, int g, int b, int a);
 
 		[DllImport(pluginName)]
 		public static extern void EffekseerSetTargetLocation(int handle, float x, float y, float z);
